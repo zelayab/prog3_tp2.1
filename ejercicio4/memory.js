@@ -10,26 +10,36 @@ class Card {
         const cardElement = document.createElement("div");
         cardElement.classList.add("cell");
         cardElement.innerHTML = `
-          <div class="card" data-name="${this.name}">
-              <div class="card-inner">
-                  <div class="card-front"></div>
-                  <div class="card-back">
-                      <img src="${this.img}" alt="${this.name}">
-                  </div>
-              </div>
-          </div>
-      `;
+            <div class="card" data-name="${this.name}">
+                <div class="card-inner">
+                    <div class="card-front"></div>
+                    <div class="card-back">
+                        <img src="${this.img}" alt="${this.name}">
+                    </div>
+                </div>
+            </div>
+        `;
         return cardElement;
     }
 
-    #flip() {
+    flip() {
+        this.isFlipped = true;
         const cardElement = this.element.querySelector(".card");
         cardElement.classList.add("flipped");
     }
 
-    #unflip() {
+    unflip() {
+        this.isFlipped = false;
         const cardElement = this.element.querySelector(".card");
         cardElement.classList.remove("flipped");
+    }
+
+    toggleFlip() {
+        this.isFlipped ? this.unflip() : this.flip();
+    }
+
+    matches(otherCard) {
+        return this.name === otherCard.name;
     }
 }
 
@@ -40,7 +50,7 @@ class Board {
         this.gameBoardElement = document.getElementById("game-board");
     }
 
-    #calculateColumns() {
+    calculateColumns() {
         const numCards = this.cards.length;
         let columns = Math.floor(numCards / 2);
 
@@ -53,13 +63,13 @@ class Board {
         return columns;
     }
 
-    #setGridColumns() {
-        const columns = this.#calculateColumns();
+    setGridColumns() {
+        const columns = this.calculateColumns();
         this.fixedGridElement.className = `fixed-grid has-${columns}-cols`;
     }
 
     render() {
-        this.#setGridColumns();
+        this.setGridColumns();
         this.gameBoardElement.innerHTML = "";
         this.cards.forEach((card) => {
             card.element
@@ -74,6 +84,31 @@ class Board {
             this.onCardClick(card);
         }
     }
+
+    shuffleCards() {
+        for (let i = this.cards.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
+        }
+    }
+
+    reset() {
+        this.shuffleCards();
+        this.render();
+    }
+
+    flipDownAllCards() {
+        this.cards.forEach((card) => {
+            if (card.isFlipped) {
+                card.toggleFlip();
+            }
+        });
+    }
+
+    resetGame() {
+        this.flipDownAllCards();
+        this.reset();
+    }
 }
 
 class MemoryGame {
@@ -81,6 +116,10 @@ class MemoryGame {
         this.board = board;
         this.flippedCards = [];
         this.matchedCards = [];
+        this.moveCount = 0;
+        this.startTime = null;
+        this.timerInterval = null;
+
         if (flipDuration < 350 || isNaN(flipDuration) || flipDuration > 3000) {
             flipDuration = 350;
             alert(
@@ -88,19 +127,73 @@ class MemoryGame {
             );
         }
         this.flipDuration = flipDuration;
-        this.board.onCardClick = this.#handleCardClick.bind(this);
+        this.board.onCardClick = this.handleCardClick.bind(this);
         this.board.reset();
+        this.startTimer();
     }
 
-    #handleCardClick(card) {
+    handleCardClick(card) {
         if (this.flippedCards.length < 2 && !card.isFlipped) {
             card.toggleFlip();
             this.flippedCards.push(card);
-
+            this.moveCount++;
+            document.getElementById("move-count").textContent = `Movimientos: ${this.moveCount}`;
             if (this.flippedCards.length === 2) {
-                setTimeout(() => this.checkForMatch(), this.flipDuration);
+                setTimeout(() => {
+                    this.checkForMatch();
+                }, this.flipDuration);
             }
         }
+    }
+
+    checkForMatch() {
+        const [firstCard, secondCard] = this.flippedCards;
+        if (firstCard.matches(secondCard)) {
+            this.matchedCards.push(firstCard, secondCard);
+            if (this.matchedCards.length === this.board.cards.length) {
+                setTimeout(() => {
+                    clearInterval(this.timerInterval);
+                    this.showScoreModal();
+                }, this.flipDuration);
+            }
+        } else {
+            this.flippedCards.forEach((card) => card.toggleFlip());
+        }
+        this.flippedCards = [];
+    }
+
+    async startTimer() {
+        this.startTime = Date.now();
+        this.timerInterval = setInterval(() => {
+            const elapsed = Date.now() - this.startTime;
+            document.getElementById("timer").textContent = `Tiempo: ${Math.floor(elapsed / 1000)}s`;
+        }, 1000);
+    }
+
+    calculateScore() {
+        const elapsed = (Date.now() - this.startTime) / 1000; // en segundos
+        const baseScore = 10000;
+        const score = Math.max(0, baseScore - (this.moveCount * 10 + elapsed * 5));
+        return Math.floor(score);
+    }
+
+    showScoreModal() {
+        const score = this.calculateScore();
+        const modal = document.getElementById("win-modal");
+        modal.querySelector("#final-score").textContent = `Puntuación: ${score}`;
+        modal.querySelector("#final-moves").textContent = `Movimientos: ${this.moveCount}`;
+        modal.querySelector("#final-time").textContent = `Tiempo: ${Math.floor((Date.now() - this.startTime) / 1000)}s`;
+        modal.classList.add("is-active");
+    }
+
+    resetGame() {
+        this.matchedCards = [];
+        this.flippedCards = [];
+        this.moveCount = 0;
+        document.getElementById("move-count").textContent = `Movimientos: ${this.moveCount}`;
+        clearInterval(this.timerInterval);
+        this.board.resetGame();
+        this.startTimer();
     }
 }
 
@@ -124,4 +217,12 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("restart-button").addEventListener("click", () => {
         memoryGame.resetGame();
     });
+
+    document.querySelectorAll(".modal-close, .modal-background").forEach((element) => {
+        element.addEventListener("click", () => {
+            document.getElementById("win-modal").classList.remove("is-active");
+        });
+    });
 });
+
+
